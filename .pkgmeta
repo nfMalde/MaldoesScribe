@@ -1,0 +1,21 @@
+# Read by the BigWigs packager (the release workflow in .github/workflows/release.yml and the
+# CurseForge packager). A release package holds only the addon folder with the files the game
+# needs; everything listed under ignore stays out.
+package-as: MaldoesScribe
+
+enable-nolib-creation: no
+
+# CHANGELOG.md is shipped and shown as the changelog on CurseForge.
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - tools
+  - docs
+  - .github
+  - deploy.ps1
+  - release.ps1
+  - .gitignore
+  - .gitattributes
+  - .pkgmeta

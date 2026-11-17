@@ -1,0 +1,32 @@
+name: CI
+
+# Every push to main and every pull request: syntax check, text keys and the smoke test
+# (tools/check). Releases are a separate, manual workflow (release.yml).
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the check tools
+        run: npm install
+        working-directory: tools/check
+
+      - name: Syntax, text keys, smoke test
+        run: npm run check
+        working-directory: tools/check

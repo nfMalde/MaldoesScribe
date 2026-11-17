@@ -1,0 +1,5 @@
+tools/check/node_modules/
+tools/check/package-lock.json
+*.zip
+# Local working notes, not part of the project.
+CLAUDE.md

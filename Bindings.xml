@@ -1,0 +1,11 @@
+<Bindings>
+    <Binding name="MALDOESSCRIBE_SMART" category="Maldö's Scribe">
+        MaldoesScribe_CopySmart()
+    </Binding>
+    <Binding name="MALDOESSCRIBE_TOOLTIP" category="Maldö's Scribe">
+        MaldoesScribe_CopyTooltip()
+    </Binding>
+    <Binding name="MALDOESSCRIBE_CHAT" category="Maldö's Scribe">
+        MaldoesScribe_CopyChat()
+    </Binding>
+</Bindings>

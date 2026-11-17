@@ -1,0 +1,215 @@
+name: Release
+
+# A release is started by hand from the Actions tab (workflow_dispatch), never by a pushed tag or a
+# merge, so nothing is ever published as a side effect. Pick how to bump; "prepare" reads the last
+# release tag, computes the next version, pulls the release notes out of CHANGELOG.md, runs the checks
+# and builds the package WITHOUT uploading. The version, the notes and the file list are in the run
+# summary and the zip is a downloadable artifact: review all of it. "publish" then waits on the
+# `release` environment's approval gate (Settings > Environments > release > required reviewers), builds
+# again from the same commit, uploads to CurseForge and creates the tag and the GitHub release.
+#
+# Once per repository: the CurseForge project id in MaldoesScribe.toc (## X-Curse-Project-ID) and the
+# secret CF_API_KEY (https://legacy.curseforge.com/account/api-tokens). Without the secret the
+# CurseForge upload is skipped and only the GitHub release is made.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version part to bump (ignored if 'version' is set)
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Explicit version, e.g. 1.2.0 (overrides bump)
+        required: false
+      prerelease:
+        description: Prerelease? (appends -beta.<run> to an auto-bumped version; CurseForge files it as beta)
+        type: boolean
+        default: false
+
+# Least-privilege default; the publish job widens this for the tag and the GitHub release.
+permissions:
+  contents: read
+
+# One release at a time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  ADDON: MaldoesScribe
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: plan
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          EXPLICIT="${{ github.event.inputs.version }}"
+          if [[ -n "$EXPLICIT" ]]; then
+            # An explicit version is used verbatim (include any prerelease suffix yourself).
+            if [[ ! "$EXPLICIT" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::Version '$EXPLICIT' is not a valid SemVer."; exit 1
+            fi
+            VERSION="$EXPLICIT"
+          else
+            # Highest existing full release (prereleases contain '-').
+            LATEST="$(git tag -l 'v*' | sed 's#^v##' | grep -vE -- '-' | sort -V | tail -n1)"
+            [[ -z "$LATEST" ]] && LATEST="0.0.0"
+            IFS=. read -r MA MI PA <<< "$LATEST"
+            case "${{ github.event.inputs.bump }}" in
+              major) MA=$((MA + 1)); MI=0; PA=0 ;;
+              minor) MI=$((MI + 1)); PA=0 ;;
+              patch) PA=$((PA + 1)) ;;
+            esac
+            VERSION="$MA.$MI.$PA"
+            if [[ "${{ github.event.inputs.prerelease }}" == "true" ]]; then
+              VERSION="${VERSION}-beta.${GITHUB_RUN_NUMBER}"
+            fi
+          fi
+
+          if [[ "$VERSION" == *-* ]]; then PRERELEASE=true; else PRERELEASE=false; fi
+          TAG="v${VERSION}"
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists - pick a different version or bump."; exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Release plan"
+            echo "- **Addon:** Maldö's Scribe (\`$ADDON\`)"
+            echo "- **Version:** \`$VERSION\` (prerelease: $PRERELEASE)"
+            echo "- **Tag:** \`$TAG\`, created on publish at \`${GITHUB_SHA::7}\`"
+            echo ""
+            echo "The CurseForge upload and the GitHub release wait on the \`release\` environment: approve it to publish."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Show exactly what will be the GitHub release body, so it can be read before approving.
+      - name: Release-notes preview
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          PRERELEASE: ${{ steps.plan.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          bash .github/scripts/release-notes.sh CHANGELOG.md "$VERSION" "$PRERELEASE" notes.md
+          if [[ ! -s notes.md ]]; then
+            {
+              echo ""
+              echo "## Release blocked: no changelog for \`$VERSION\`"
+              echo ""
+              echo "> There is no \`## [$VERSION]\` section in \`CHANGELOG.md\`."
+              echo "> Roll the \`## [Unreleased]\` entries into \`## [$VERSION] - <date>\`, commit, and run again."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::No '## [$VERSION]' section in CHANGELOG.md - every release must document its version."
+            exit 1
+          fi
+          {
+            echo ""
+            echo "## Release notes for \`$VERSION\` (the GitHub release body)"
+            echo ""
+            cat notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Syntax, text keys, smoke test
+        run: npm install && npm run check
+        working-directory: tools/check
+
+      # The packager takes the version from the git tag: a local tag is enough for the build. The real
+      # tag is created on GitHub by the publish job, at this same commit.
+      - name: Version tag (local only)
+        run: git tag "${{ steps.plan.outputs.tag }}"
+
+      - name: Build the package (no upload)
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d
+
+      - name: Check and list the package
+        run: |
+          set -euo pipefail
+          for zip in .release/*.zip; do
+            {
+              echo ""
+              echo "## Package: $(basename "$zip")"
+              echo '```'
+              unzip -l "$zip"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            # Only the addon folder, nothing else: no tools, scripts or notes.
+            outside="$(unzip -Z1 "$zip" | grep -vE "^$ADDON/" || true)"
+            forbidden="$(unzip -Z1 "$zip" | grep -E '(^|/)(tools|docs|node_modules|\.github|\.git)/|deploy\.ps1|release\.ps1|\.gitignore|\.gitattributes|\.pkgmeta' || true)"
+            if [[ -n "$outside$forbidden" ]]; then
+              echo "::error::$(basename "$zip") holds files that do not belong in a release:"
+              echo "$outside"
+              echo "$forbidden"
+              exit 1
+            fi
+          done
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download the package from this run's artifacts to review it, then approve the publish job." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: .release/*.zip
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: release   # approval gate: configure required reviewers in Settings > Environments
+    permissions:
+      contents: write      # the tag and the GitHub release
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Release notes
+        run: bash .github/scripts/release-notes.sh CHANGELOG.md "$VERSION" "$PRERELEASE" notes.md
+
+      - name: Version tag (local, pushed with the release below)
+        run: git tag "$TAG"
+
+      # Same commit, same tag, same packager: the result equals the reviewed package. With CF_API_KEY
+      # the packager uploads to CurseForge (project id from the toc, game version from ## Interface,
+      # changelog from .pkgmeta); without it only the zip is built.
+      - name: Package and upload to CurseForge
+        uses: BigWigsMods/packager@v2
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+
+      - name: Tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+          [[ "$PRERELEASE" == "true" ]] && ARGS+=(--prerelease)
+          gh release create "$TAG" .release/*.zip \
+            --target "$GITHUB_SHA" \
+            --title "Maldö's Scribe $VERSION" \
+            --notes-file notes.md \
+            "${ARGS[@]}"

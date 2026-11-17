@@ -1,0 +1,11 @@
+# Line endings: LF in the repository; the workflow's shell script must be LF on the Linux runner.
+* text=auto
+*.sh text eol=lf
+*.yml text eol=lf
+*.lua text
+*.toc text
+*.xml text
+*.md text
+*.ps1 text
+*.tga binary
+*.zip binary

@@ -1,0 +1,15 @@
+{
+  "name": "maldoes-scribe-check",
+  "private": true,
+  "description": "Syntax check and a smoke test of the addon outside the game (no Lua interpreter needed, only Node).",
+  "scripts": {
+    "syntax": "node syntax.js ../..",
+    "keys": "node keys.js ../..",
+    "smoke": "node smoke.js ../..",
+    "check": "node syntax.js ../.. && node keys.js ../.. && node smoke.js ../.."
+  },
+  "devDependencies": {
+    "fengari": "^0.1.4",
+    "luaparse": "^0.3.1"
+  }
+}

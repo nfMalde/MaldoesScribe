@@ -1,0 +1,23 @@
+## Interface: 16001
+## AllowLoadGameType: camelot
+## Title: |cffff8a3dMaldö's|r Scribe
+## Notes: Select and copy any text in the game: chat, quests, guild info, item names, books and tooltips.
+## Notes-deDE: Markiere und kopiere jeden Text im Spiel: Chat, Quests, Gildeninfo, Itemnamen, Bücher und Tooltips.
+## Author: Maldö
+## Version: @project-version@
+## IconTexture: Interface\AddOns\MaldoesScribe\Media\scribe-icon
+## SavedVariables: MaldoesScribeDB
+## AddonCompartmentFunc: MaldoesScribe_OnAddonCompartmentClick
+## X-Website: https://github.com/nfMalde
+## X-License: GPL-3.0
+## X-Curse-Project-ID: 1812685
+
+Log.lua
+Locales.lua
+Data.lua
+Core.lua
+Text.lua
+Sources.lua
+UI.lua
+Buttons.lua
+Options.lua
